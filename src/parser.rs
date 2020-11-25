@@ -55,7 +55,7 @@ pub fn initialize() -> App<'static, 'static> {
                 .long("verbosity")
                 .takes_value(false)
                 .multiple(true)
-                .help("Increase verbosity level (use -vv or more for greater effect)"),
+                .help("Increase verbosity level (use -vv or more for greater effect. [CAUTION] 4 -v's is probably too much)"),
         )
         .arg(
             Arg::with_name("proxy")
@@ -110,6 +110,12 @@ pub fn initialize() -> App<'static, 'static> {
                 .help("Only print URLs; Don't print status codes, response size, running config, etc...")
         )
         .arg(
+            Arg::with_name("json")
+                .long("json")
+                .takes_value(false)
+                .help("Emit JSON logs to --output and --debug-log instead of normal text")
+        )
+        .arg(
             Arg::with_name("dont_filter")
                 .short("D")
                 .long("dont-filter")
@@ -121,7 +127,14 @@ pub fn initialize() -> App<'static, 'static> {
                 .short("o")
                 .long("output")
                 .value_name("FILE")
-                .help("Output file to write results to (default: stdout)")
+                .help("Output file to write results to (use w/ --json for JSON entries)")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("debug_log")
+                .long("debug-log")
+                .value_name("FILE")
+                .help("Output file to write log entries (use w/ --json for JSON entries)")
                 .takes_value(true),
         )
         .arg(
@@ -216,6 +229,30 @@ pub fn initialize() -> App<'static, 'static> {
                 .use_delimiter(true)
                 .help(
                     "Filter out messages of a particular size (ex: -S 5120 -S 4927,1970)",
+                ),
+        )
+        .arg(
+            Arg::with_name("filter_words")
+                .short("W")
+                .long("filter-words")
+                .value_name("WORDS")
+                .takes_value(true)
+                .multiple(true)
+                .use_delimiter(true)
+                .help(
+                    "Filter out messages of a particular word count (ex: -W 312 -W 91,82)",
+                ),
+        )
+        .arg(
+            Arg::with_name("filter_lines")
+                .short("N")
+                .long("filter-lines")
+                .value_name("LINES")
+                .takes_value(true)
+                .multiple(true)
+                .use_delimiter(true)
+                .help(
+                    "Filter out messages of a particular line count (ex: -N 20 -N 31,30)",
                 ),
         )
         .arg(

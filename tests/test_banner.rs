@@ -117,7 +117,7 @@ fn banner_prints_headers() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 /// test allows non-existent wordlist to trigger the banner printing to stderr
 /// expect to see all mandatory prints + multiple size filters
-fn banner_prints_filter_sizes() -> Result<(), Box<dyn std::error::Error>> {
+fn banner_prints_filter_sizes() {
     Command::cargo_bin("feroxbuster")
         .unwrap()
         .arg("--url")
@@ -126,6 +126,14 @@ fn banner_prints_filter_sizes() -> Result<(), Box<dyn std::error::Error>> {
         .arg("789456123")
         .arg("--filter-size")
         .arg("44444444")
+        .arg("-N")
+        .arg("678")
+        .arg("--filter-lines")
+        .arg("679")
+        .arg("-W")
+        .arg("93")
+        .arg("--filter-words")
+        .arg("94")
         .assert()
         .success()
         .stderr(
@@ -138,11 +146,16 @@ fn banner_prints_filter_sizes() -> Result<(), Box<dyn std::error::Error>> {
                 .and(predicate::str::contains("Timeout (secs)"))
                 .and(predicate::str::contains("User-Agent"))
                 .and(predicate::str::contains("Size Filter"))
+                .and(predicate::str::contains("Word Count Filter"))
+                .and(predicate::str::contains("Line Count Filter"))
                 .and(predicate::str::contains("789456123"))
                 .and(predicate::str::contains("44444444"))
+                .and(predicate::str::contains("93"))
+                .and(predicate::str::contains("94"))
+                .and(predicate::str::contains("678"))
+                .and(predicate::str::contains("679"))
                 .and(predicate::str::contains("─┴─")),
         );
-    Ok(())
 }
 
 #[test]
@@ -687,4 +700,57 @@ fn banner_prints_filter_status() -> Result<(), Box<dyn std::error::Error>> {
                 .and(predicate::str::contains("─┴─")),
         );
     Ok(())
+}
+
+#[test]
+/// test allows non-existent wordlist to trigger the banner printing to stderr
+/// expect to see all mandatory prints + json
+fn banner_prints_json() {
+    Command::cargo_bin("feroxbuster")
+        .unwrap()
+        .arg("--url")
+        .arg("http://localhost")
+        .arg("--json")
+        .assert()
+        .success()
+        .stderr(
+            predicate::str::contains("─┬─")
+                .and(predicate::str::contains("Target Url"))
+                .and(predicate::str::contains("http://localhost"))
+                .and(predicate::str::contains("Threads"))
+                .and(predicate::str::contains("Wordlist"))
+                .and(predicate::str::contains("Status Codes"))
+                .and(predicate::str::contains("Timeout (secs)"))
+                .and(predicate::str::contains("User-Agent"))
+                .and(predicate::str::contains("JSON Output"))
+                .and(predicate::str::contains("│ true"))
+                .and(predicate::str::contains("─┴─")),
+        );
+}
+
+#[test]
+/// test allows non-existent wordlist to trigger the banner printing to stderr
+/// expect to see all mandatory prints + json
+fn banner_prints_debug_log() {
+    Command::cargo_bin("feroxbuster")
+        .unwrap()
+        .arg("--url")
+        .arg("http://localhost")
+        .arg("--debug-log")
+        .arg("im-a-debug-log.hurr-durr")
+        .assert()
+        .success()
+        .stderr(
+            predicate::str::contains("─┬─")
+                .and(predicate::str::contains("Target Url"))
+                .and(predicate::str::contains("http://localhost"))
+                .and(predicate::str::contains("Threads"))
+                .and(predicate::str::contains("Wordlist"))
+                .and(predicate::str::contains("Status Codes"))
+                .and(predicate::str::contains("Timeout (secs)"))
+                .and(predicate::str::contains("User-Agent"))
+                .and(predicate::str::contains("Debugging Log"))
+                .and(predicate::str::contains("│ im-a-debug-log.hurr-durr"))
+                .and(predicate::str::contains("─┴─")),
+        );
 }

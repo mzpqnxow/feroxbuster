@@ -1,11 +1,41 @@
-use crate::{FeroxError, FeroxResult};
+use crate::{
+    config::{CONFIGURATION, PROGRESS_PRINTER},
+    FeroxError, FeroxResult,
+};
 use console::{strip_ansi_codes, style, user_attended};
 use indicatif::ProgressBar;
-use reqwest::Url;
-use reqwest::{Client, Response};
+use reqwest::{Client, Response, Url};
 #[cfg(not(target_os = "windows"))]
 use rlimit::{getrlimit, setrlimit, Resource, Rlim};
 use std::convert::TryInto;
+use std::sync::{Arc, RwLock};
+use std::{fs, io};
+
+/// Given the path to a file, open the file in append mode (create it if it doesn't exist) and
+/// return a reference to the file that is buffered and locked
+pub fn open_file(filename: &str) -> Option<Arc<RwLock<io::BufWriter<fs::File>>>> {
+    log::trace!("enter: open_file({})", filename);
+
+    match fs::OpenOptions::new() // std fs
+        .create(true)
+        .append(true)
+        .open(filename)
+    {
+        Ok(file) => {
+            let writer = io::BufWriter::new(file); // std io
+
+            let locked_file = Some(Arc::new(RwLock::new(writer)));
+
+            log::trace!("exit: open_file -> {:?}", locked_file);
+            locked_file
+        }
+        Err(e) => {
+            log::error!("{}", e);
+            log::trace!("exit: open_file -> None");
+            None
+        }
+    }
+}
 
 /// Helper function that determines the current depth of a given url
 ///
@@ -21,13 +51,7 @@ use std::convert::TryInto;
 pub fn get_current_depth(target: &str) -> usize {
     log::trace!("enter: get_current_depth({})", target);
 
-    let target = if !target.ends_with('/') {
-        // target url doesn't end with a /, for the purposes of determining depth, we'll normalize
-        // all urls to end in a / and then calculate accordingly
-        format!("{}/", target)
-    } else {
-        String::from(target)
-    };
+    let target = normalize_url(target);
 
     match Url::parse(&target) {
         Ok(url) => {
@@ -90,8 +114,8 @@ pub fn get_url_path_length(url: &Url) -> u64 {
 
     let path = url.path();
 
-    let segments = if path.starts_with('/') {
-        path[1..].split_terminator('/')
+    let segments = if let Some(split) = path.strip_prefix('/') {
+        split.split_terminator('/')
     } else {
         log::trace!("exit: get_url_path_length -> 0");
         return 0;
@@ -244,7 +268,6 @@ pub async fn make_request(client: &Client, url: &Url) -> FeroxResult<Response> {
 
     match client.get(url.to_owned()).send().await {
         Ok(resp) => {
-            log::debug!("requested Url: {}", resp.url());
             log::trace!("exit: make_request -> {:?}", resp);
             Ok(resp)
         }
@@ -253,11 +276,48 @@ pub async fn make_request(client: &Client, url: &Url) -> FeroxResult<Response> {
             if e.to_string().contains("operation timed out") {
                 // only warn for timeouts, while actual errors are still left as errors
                 log::warn!("Error while making request: {}", e);
+            } else if e.is_redirect() {
+                if let Some(last_redirect) = e.url() {
+                    // get where we were headed (last_redirect) and where we came from (url)
+                    let fancy_message = format!("{} !=> {}", url, last_redirect);
+
+                    let report = if let Some(msg_status) = e.status() {
+                        create_report_string(msg_status.as_str(), "-1", "-1", "-1", &fancy_message)
+                    } else {
+                        create_report_string("UNK", "-1", "-1", "-1", &fancy_message)
+                    };
+
+                    ferox_print(&report, &PROGRESS_PRINTER)
+                };
             } else {
                 log::error!("Error while making request: {}", e);
             }
             Err(Box::new(e))
         }
+    }
+}
+
+/// Helper to create the standard line for output to file/terminal
+///
+/// example output:
+/// 200      127l      283w     4134c http://localhost/faq
+pub fn create_report_string(
+    status: &str,
+    line_count: &str,
+    word_count: &str,
+    content_length: &str,
+    url: &str,
+) -> String {
+    if CONFIGURATION.quiet {
+        // -q used, just need the url
+        format!("{}\n", url)
+    } else {
+        // normal printing with status and sizes
+        let color_status = status_colorizer(status);
+        format!(
+            "{} {:>8}l {:>8}w {:>8}c {}\n",
+            color_status, line_count, word_count, content_length, url
+        )
     }
 }
 
@@ -310,6 +370,22 @@ pub fn set_open_file_limit(limit: usize) -> bool {
 
     log::trace!("exit: set_open_file_limit -> {}", false);
     false
+}
+
+/// Simple helper to abstract away adding a forward-slash to a url if not present
+///
+/// used mostly for deduplication purposes and url state tracking
+pub fn normalize_url(url: &str) -> String {
+    log::trace!("enter: normalize_url({})", url);
+
+    let normalized = if url.ends_with('/') {
+        url.to_string()
+    } else {
+        format!("{}/", url)
+    };
+
+    log::trace!("exit: normalize_url -> {}", normalized);
+    normalized
 }
 
 #[cfg(test)]

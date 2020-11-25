@@ -3,7 +3,8 @@ use feroxbuster::{
     banner,
     config::{CONFIGURATION, PROGRESS_BAR, PROGRESS_PRINTER},
     heuristics, logger, reporter,
-    scanner::{scan_url, PAUSE_SCAN},
+    scan_manager::PAUSE_SCAN,
+    scanner::{self, scan_url},
     utils::{ferox_print, get_current_depth, module_colorizer, status_colorizer},
     FeroxError, FeroxResponse, FeroxResult, SLEEP_DURATION, VERSION,
 };
@@ -96,7 +97,7 @@ fn get_unique_words_from_wordlist(path: &str) -> FeroxResult<Arc<HashSet<String>
 async fn scan(
     targets: Vec<String>,
     tx_term: UnboundedSender<FeroxResponse>,
-    tx_file: UnboundedSender<String>,
+    tx_file: UnboundedSender<FeroxResponse>,
 ) -> FeroxResult<()> {
     log::trace!("enter: scan({:?}, {:?}, {:?})", targets, tx_term, tx_file);
     // cloning an Arc is cheap (it's basically a pointer into the heap)
@@ -111,6 +112,16 @@ async fn scan(
         err.message = format!("Did not find any words in {}", CONFIGURATION.wordlist);
         return Err(Box::new(err));
     }
+
+    scanner::initialize(
+        words.len(),
+        CONFIGURATION.scan_limit,
+        &CONFIGURATION.extensions,
+        &CONFIGURATION.filter_status,
+        &CONFIGURATION.filter_line_count,
+        &CONFIGURATION.filter_word_count,
+        &CONFIGURATION.filter_size,
+    );
 
     let mut tasks = vec![];
 
@@ -176,7 +187,6 @@ async fn wrapped_main() {
 
     // can't trace main until after logger is initialized and the above task is started
     log::trace!("enter: main");
-    log::debug!("{:#?}", *CONFIGURATION);
 
     // spawn a thread that listens for keyboard input on stdin, when a user presses enter
     // the input handler will toggle PAUSE_SCAN, which in turn is used to pause and resume
@@ -238,12 +248,12 @@ async fn wrapped_main() {
 async fn clean_up(
     tx_term: UnboundedSender<FeroxResponse>,
     term_handle: JoinHandle<()>,
-    tx_file: UnboundedSender<String>,
+    tx_file: UnboundedSender<FeroxResponse>,
     file_handle: Option<JoinHandle<()>>,
     save_output: bool,
 ) {
     log::trace!(
-        "enter: clean_up({:?}, {:?}, {:?}, {:?}, {}",
+        "enter: clean_up({:?}, {:?}, {:?}, {:?}, {})",
         tx_term,
         term_handle,
         tx_file,
